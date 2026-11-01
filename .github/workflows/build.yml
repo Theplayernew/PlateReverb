@@ -1,5 +1,6 @@
 name: Build VST3
 on: [workflow_dispatch]
+
 jobs:
   build:
     strategy:
@@ -24,3 +25,32 @@ jobs:
         with:
           name: PlateReverb-VST3-${{ runner.os }}
           path: build/PlateReverb_artefacts/Release/VST3/*.vst3
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@main
+        with:
+          path: artifacts
+      - name: Package
+        run: |
+          cd artifacts
+          for d in */; do
+            d=${d%/}
+            (cd "$d" && zip -qr "../$d.zip" .)
+          done
+          ls -la
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(date -u +%Y-%m-%d_%H%M)
+          gh release create "$TAG" artifacts/*.zip \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Plate Reverb $TAG" \
+            --generate-notes
