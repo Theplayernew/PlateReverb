@@ -12,9 +12,10 @@ APVTS::ParameterLayout PlateReverbProcessor::createLayout()
     auto pct = [] (float x, int) { return juce::String (juce::roundToInt (x * 100.0f)) + " %"; };
     auto hz  = [] (float x, int) { return x >= 1000.0f ? juce::String (x / 1000.0f, 1) + " kHz" : juce::String (juce::roundToInt (x)) + " Hz"; };
     auto ms  = [] (float x, int) { return juce::String (x, 1) + " ms"; };
+    auto sec = [] (float x, int) { return juce::String (x, x < 10.0f ? 2 : 1) + " s"; };
 
     v.push_back (std::make_unique<P> (juce::ParameterID { "predelay", 1 }, "Pre-Delay", NR (0.0f, 250.0f, 0.01f, 0.5f), 10.0f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (ms)));
-    v.push_back (std::make_unique<P> (juce::ParameterID { "decay", 1 },    "Decay",     NR (0.0f, 1.0f, 0.001f), 0.6f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (pct)));
+    v.push_back (std::make_unique<P> (juce::ParameterID { "time", 1 },     "Reverb Time", NR (0.1f, 20.0f, 0.01f, 0.4f), 2.5f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (sec)));
     v.push_back (std::make_unique<P> (juce::ParameterID { "damping", 1 },  "Damping",   NR (500.0f, 20000.0f, 1.0f, 0.3f), 6000.0f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (hz)));
     v.push_back (std::make_unique<P> (juce::ParameterID { "bandwidth", 1 },"Bandwidth", NR (500.0f, 20000.0f, 1.0f, 0.3f), 14000.0f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (hz)));
     v.push_back (std::make_unique<P> (juce::ParameterID { "diffusion", 1 },"Diffusion", NR (0.0f, 1.0f, 0.001f), 1.0f, juce::AudioParameterFloatAttributes().withStringFromValueFunction (pct)));
@@ -46,7 +47,8 @@ void PlateReverbProcessor::prepareToPlay (double sr, int)
     reverb.prepare (sr);
 }
 
-void PlateReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+template <typename T>
+void PlateReverbProcessor::processT (juce::AudioBuffer<T>& buffer)
 {
     juce::ScopedNoDenormals noDenormals;
     const int numIn = getTotalNumInputChannels();
@@ -57,7 +59,7 @@ void PlateReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
     plate::Params p;
     p.predelayMs  = *apvts.getRawParameterValue ("predelay");
-    p.decay       = *apvts.getRawParameterValue ("decay");
+    p.reverbTime  = *apvts.getRawParameterValue ("time");
     p.dampHz      = *apvts.getRawParameterValue ("damping");
     p.bandwidthHz = *apvts.getRawParameterValue ("bandwidth");
     p.diffusion   = *apvts.getRawParameterValue ("diffusion");
@@ -68,13 +70,13 @@ void PlateReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     p.mix         = *apvts.getRawParameterValue ("mix");
     reverb.setParams (p);
 
-    float* L = buffer.getWritePointer (0);
-    float* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : L;
+    T* L = buffer.getWritePointer (0);
+    T* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : L;
     for (int i = 0; i < n; ++i)
     {
-        float oL, oR;
-        reverb.process (L[i], R[i], oL, oR);
-        L[i] = oL; R[i] = oR;
+        double oL, oR;
+        reverb.process ((double) L[i], (double) R[i], oL, oR);   // engine runs in 64-bit internally
+        L[i] = (T) oL; R[i] = (T) oR;
     }
 }
 
