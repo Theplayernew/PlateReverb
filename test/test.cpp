@@ -1,22 +1,37 @@
+// Standalone check of the engine: stability + measured RT60 vs. the Reverb Time setting.
 #include "../Source/PlateReverb.h"
 #include <cstdio>
-int main(){
-  for (double sr : {44100.0, 48000.0, 96000.0}) {
-    plate::PlateReverb r; r.prepare(sr);
-    plate::Params p; p.mix=1.0f; p.decay=0.7f; r.setParams(p);
-    float peak=0, e0=0, e1=0, e2=0; bool bad=false;
-    int N=(int)(sr*6);
-    for(int i=0;i<N;i++){
-      float l,rr; float in = i==0?1.0f:0.0f;
-      r.process(in,in,l,rr);
-      if(!std::isfinite(l)||!std::isfinite(rr)) bad=true;
-      float e=l*l+rr*rr; peak=std::max(peak,std::sqrt(e));
-      if(i>0.1*sr&&i<0.6*sr)e0+=e; else if(i>1.5*sr&&i<2.0*sr)e1+=e; else if(i>4*sr&&i<4.5*sr)e2+=e;
-    }
-    printf("sr=%.0f peak=%.3f nan=%d  E(0.1-0.6s)=%.2e E(1.5-2s)=%.2e E(4-4.5s)=%.2e\n",sr,peak,bad,e0,e1,e2);
-  }
-  // max decay stability
-  plate::PlateReverb r; r.prepare(48000); plate::Params p; p.mix=1; p.decay=1; p.modDepth=1; r.setParams(p);
-  float mx=0; for(int i=0;i<48000*30;i++){float l,rr; float in=(i<48000)?((i*7919%1000)/500.f-1.f):0; r.process(in,in,l,rr); mx=std::max(mx,std::fabs(l));}
-  printf("max-decay peak out=%.3f\n",mx);
+int main()
+{
+    for (double sr : { 44100.0, 48000.0, 96000.0 })
+        for (double rt : { 0.5, 1.0, 2.5, 6.0 })
+        {
+            plate::PlateReverb r; r.prepare (sr);
+            plate::Params p; p.mix = 1.0; p.reverbTime = rt; p.dampHz = 20000; p.bandwidthHz = 20000;
+            p.lowCutHz = 20; p.highCutHz = 20000; p.modDepth = 0.0; r.setParams (p);
+            const int N = (int) (sr * (rt * 2.0 + 2.0));
+            std::vector<double> e ((size_t) N); bool bad = false;
+            for (int i = 0; i < N; ++i)
+            {
+                double l, rr; const double in = i == 0 ? 1.0 : 0.0;
+                r.process (in, in, l, rr);
+                if (! std::isfinite (l) || ! std::isfinite (rr)) bad = true;
+                e[(size_t) i] = l * l + rr * rr;
+            }
+            // Schroeder backward integration, fit -5..-35 dB, extrapolate to 60 dB
+            std::vector<double> edc ((size_t) N); double acc = 0;
+            for (int i = N - 1; i >= 0; --i) { acc += e[(size_t) i]; edc[(size_t) i] = acc; }
+            double t5 = -1, t35 = -1;
+            for (int i = 0; i < N; ++i)
+            {
+                const double db = 10 * std::log10 (edc[(size_t) i] / edc[0] + 1e-30);
+                if (t5 < 0 && db <= -5) t5 = i / sr;
+                if (t35 < 0 && db <= -35) { t35 = i / sr; break; }
+            }
+            printf ("sr=%6.0f  set RT60=%.1fs  measured=%.2fs  nan=%d\n", sr, rt, (t35 - t5) * 2.0, bad);
+        }
+    // max-setting stability
+    plate::PlateReverb r; r.prepare (48000); plate::Params p; p.mix = 1; p.reverbTime = 20; p.modDepth = 1; r.setParams (p);
+    double mx = 0; for (int i = 0; i < 48000 * 40; ++i) { double l, rr; double in = i < 48000 ? ((i * 7919 % 1000) / 500.0 - 1.0) : 0; r.process (in, in, l, rr); mx = std::max (mx, std::fabs (l)); }
+    printf ("20 s / full-mod noise burst: peak out = %.3f\n", mx);
 }
