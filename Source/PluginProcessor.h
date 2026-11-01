@@ -11,7 +11,10 @@ public:
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout&) const override;
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using AudioProcessor::processBlock;
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override  { processT (b); }
+    void processBlock (juce::AudioBuffer<double>& b, juce::MidiBuffer&) override { processT (b); }
+    bool supportsDoublePrecisionProcessing() const override { return true; }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -34,6 +37,7 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    template <typename T> void processT (juce::AudioBuffer<T>&);
     plate::PlateReverb reverb;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlateReverbProcessor)
 };
